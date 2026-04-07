@@ -14,14 +14,39 @@ const db = require('./config/db');
 const app = express();
 
 // ==========================
-// Middlewares
+// CORS Configuration - FIXED for production
 // ==========================
+const allowedOrigins = [
+    'http://localhost:3000',           // Local development
+    'http://localhost:3001',           // Alternative local port
+    'https://your-frontend-domain.com', // Replace with your actual frontend domain
+    'https://loan-frontend-production.up.railway.app', // Example Railway frontend
+    // Add any other frontend URLs you're using
+];
+
 app.use(cors({
-    origin: 'http://localhost:3000',
+    origin: function(origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl)
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.indexOf(origin) === -1) {
+            const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+            return callback(new Error(msg), false);
+        }
+        return callback(null, true);
+    },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'], // ✅ PATCH added — fixes "Failed to fetch" on loan status update
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+// For development, you can also use a more permissive CORS:
+// app.use(cors({
+//     origin: '*',
+//     credentials: true,
+//     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+//     allowedHeaders: ['Content-Type', 'Authorization']
+// }));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -68,6 +93,41 @@ app.get('/api/test', (req, res) => {
 });
 
 // ==========================
+// Debug endpoint to check available routes
+// ==========================
+app.get('/api/debug/routes', (req, res) => {
+    const routes = [];
+    
+    // Function to extract routes from router
+    const extractRoutes = (stack, basePath = '') => {
+        stack.forEach(layer => {
+            if (layer.route) {
+                // Routes registered directly
+                const methods = Object.keys(layer.route.methods).join(', ').toUpperCase();
+                routes.push(`${methods} ${basePath}${layer.route.path}`);
+            } else if (layer.name === 'router' && layer.handle.stack) {
+                // Router middleware
+                const routerPath = layer.regexp.source
+                    .replace('\\/?(?=\\/|$)', '')
+                    .replace(/\\\//g, '/')
+                    .replace(/\^/g, '')
+                    .replace(/\?/g, '')
+                    .replace(/\(\?:\(\[\^\\\/\]\+\?\)\)/g, ':param');
+                extractRoutes(layer.handle.stack, `${basePath}${routerPath}`);
+            }
+        });
+    };
+    
+    extractRoutes(app._router.stack);
+    
+    res.json({
+        message: "Available routes",
+        total_routes: routes.length,
+        routes: routes.sort()
+    });
+});
+
+// ==========================
 // Register Main Routes
 // ==========================
 
@@ -106,6 +166,7 @@ app.get('/', (req, res) => {
         message: 'Loan Management Backend is Running...',
         endpoints: {
             test: '/api/test',
+            debug: '/api/debug/routes',
             emailTest: '/api/test-email',
             adminNotification: '/api/email/admin-notification',
             users: '/api/users',
@@ -117,12 +178,23 @@ app.get('/', (req, res) => {
 });
 
 // ==========================
-// 404 Handler
+// 404 Handler - Improved for debugging
 // ==========================
 app.use((req, res) => {
+    console.log(`404 Not Found: ${req.method} ${req.originalUrl}`);
     res.status(404).json({
         message: 'Route not found',
-        path: req.originalUrl
+        path: req.originalUrl,
+        method: req.method,
+        available_endpoints: [
+            '/api/test',
+            '/api/debug/routes',
+            '/api/users',
+            '/api/loans',
+            '/api/loans/summary',
+            '/api/profile',
+            '/api/loan-payments'
+        ]
     });
 });
 
@@ -147,10 +219,12 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📝 Test endpoint:      http://localhost:${PORT}/api/test`);
+    console.log(`🔍 Debug routes:       http://localhost:${PORT}/api/debug/routes`);
     console.log(`📩 Email test route:   http://localhost:${PORT}/api/test-email`);
     console.log(`📧 Admin notification: http://localhost:${PORT}/api/email/admin-notification`);
     console.log(`🧪 Test admin email:   http://localhost:${PORT}/api/email/test-admin-notification`);
     console.log(`🔑 Login endpoint:     http://localhost:${PORT}/api/users/login`);
     console.log(`📊 Loans endpoint:     http://localhost:${PORT}/api/loans`);
+    console.log(`📈 Loan summary:       http://localhost:${PORT}/api/loans/summary`);
     console.log(`💳 Loan Payments:      http://localhost:${PORT}/api/loan-payments`);
 });
