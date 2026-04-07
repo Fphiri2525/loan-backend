@@ -91,8 +91,9 @@ router.post('/apply', async (req, res) => {
 
         const loan_id = result.insertId;
 
+        // Get user information - using correct column names (username from users table)
         const [userInfo] = await db.query(`
-            SELECT u.email, u.username, up.full_name, up.phone
+            SELECT u.email, u.username, up.phone
             FROM users u
             JOIN user_profiles up ON u.user_id = up.user_id
             WHERE u.email = ?
@@ -103,8 +104,9 @@ router.post('/apply', async (req, res) => {
         let emailError = null;
 
         if (userInfo.length > 0) {
-            const userName = userInfo[0].username || userInfo[0].full_name || 'Customer';
+            const userName = userInfo[0].username;
             const userEmail = userInfo[0].email;
+            const userPhone = userInfo[0].phone || 'Not provided';
             const applicationDate = new Date().toLocaleString();
             const formattedLoanAmount = `MWK ${loan_amount.toLocaleString()}`;
             const formattedInterestAmount = `MWK ${interest_amount.toLocaleString()}`;
@@ -112,7 +114,7 @@ router.post('/apply', async (req, res) => {
             const weeklyPayment = total_repayment / duration_weeks;
             const formattedWeeklyPayment = `MWK ${weeklyPayment.toLocaleString()}`;
 
-            // Professional email to user
+            // 1. Send confirmation email to USER
             try {
                 const userEmailSubject = 'XTData Loan Application Received';
                 const userEmailMessage = `
@@ -141,8 +143,7 @@ You will receive an email once a decision has been made.
 
 Track your application status anytime by logging into your account.
 
-For inquiries, please contact:
-support@xtdata.com
+For inquiries, please contact: support@xtdata.com
 
 Yours sincerely,
 Loan Processing Department
@@ -151,13 +152,14 @@ XTData Financial Services
 
                 await sendEmail(userEmail, userEmailSubject, userEmailMessage);
                 userEmailSent = true;
+                console.log(`User email sent to: ${userEmail}`);
 
             } catch (err) {
                 console.error('Failed to send user email:', err);
                 emailError = err.message;
             }
 
-            // Professional email to admin
+            // 2. Send notification to ADMIN
             try {
                 const adminEmail = process.env.ADMIN_EMAIL || 'admin@xtdata.com';
                 const adminEmailSubject = `New Loan Application - XT-${loan_id}`;
@@ -171,7 +173,7 @@ Applicant Information
 ----------------------------------------
 Name: ${userName}
 Email: ${userEmail}
-Phone: ${userInfo[0].phone || 'Not provided'}
+Phone: ${userPhone}
 
 Loan Details
 ----------------------------------------
@@ -194,6 +196,7 @@ XTData Loan Management System
 
                 await sendEmail(adminEmail, adminEmailSubject, adminEmailMessage);
                 adminEmailSent = true;
+                console.log(`Admin email sent to: ${adminEmail}`);
 
             } catch (err) {
                 console.error('Failed to send admin email:', err);
@@ -203,9 +206,9 @@ XTData Loan Management System
 
         let responseMessage = "Loan application submitted successfully";
         if (userEmailSent && adminEmailSent) {
-            responseMessage += " and email confirmations sent.";
+            responseMessage += " with email confirmations sent to you and admin.";
         } else if (userEmailSent) {
-            responseMessage += " and confirmation email sent.";
+            responseMessage += " with confirmation email sent to you.";
         }
 
         return res.status(201).json({
@@ -299,10 +302,11 @@ router.patch('/:loan_id/status', async (req, res) => {
             return res.status(400).json({ message: `Loan is already ${previousStatus} and cannot be changed` });
         }
 
+        // Get user information - using correct column names
         const [userInfo] = await db.query(`
             SELECT 
                 u.email, 
-                u.username, 
+                u.username,
                 l.loan_amount,
                 l.total_repayment,
                 l.duration_weeks,
