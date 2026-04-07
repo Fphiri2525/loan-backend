@@ -38,7 +38,7 @@ router.get('/status', async (req, res) => {
 });
 
 // ===============================
-// APPLY FOR LOAN
+// APPLY FOR LOAN WITH EMAIL NOTIFICATIONS
 // POST /api/loans/apply
 // ===============================
 router.post('/apply', async (req, res) => {
@@ -57,11 +57,6 @@ router.post('/apply', async (req, res) => {
         // Validate duration
         if (duration_weeks < 1 || duration_weeks > 52) {
             return res.status(400).json({ message: "Duration must be between 1 and 52 weeks" });
-        }
-
-        // ✅ UPDATED: Accept any interest rate between 0.5% and 50%
-        if (interest_rate < 0.5 || interest_rate > 50) {
-            return res.status(400).json({ message: "Interest rate must be between 0.5% and 50%" });
         }
 
         const [profileCheck] = await db.query(`
@@ -89,17 +84,142 @@ router.post('/apply', async (req, res) => {
         const interest_amount = (loan_amount * interest_rate) / 100;
         const total_repayment = Number(loan_amount) + Number(interest_amount);
 
-        await db.query(`
-            INSERT INTO loans (profile_id, loan_amount, interest_rate, interest_amount, total_repayment, duration_weeks)
-            VALUES (?, ?, ?, ?, ?, ?)
+        const [result] = await db.query(`
+            INSERT INTO loans (profile_id, loan_amount, interest_rate, interest_amount, total_repayment, duration_weeks, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending')
         `, [profile_id, loan_amount, interest_rate, interest_amount, total_repayment, duration_weeks]);
 
-        return res.status(201).json({ 
-            message: "Loan application submitted successfully", 
-            profile_completed: 1, 
-            loan_submitted: 1, 
-            interest_amount, 
-            total_repayment 
+        const loan_id = result.insertId;
+
+        const [userInfo] = await db.query(`
+            SELECT u.email, u.username, up.full_name, up.phone
+            FROM users u
+            JOIN user_profiles up ON u.user_id = up.user_id
+            WHERE u.email = ?
+        `, [email]);
+
+        let userEmailSent = false;
+        let adminEmailSent = false;
+        let emailError = null;
+
+        if (userInfo.length > 0) {
+            const userName = userInfo[0].username || userInfo[0].full_name || 'Customer';
+            const userEmail = userInfo[0].email;
+            const applicationDate = new Date().toLocaleString();
+            const formattedLoanAmount = `MWK ${loan_amount.toLocaleString()}`;
+            const formattedInterestAmount = `MWK ${interest_amount.toLocaleString()}`;
+            const formattedTotalRepayment = `MWK ${total_repayment.toLocaleString()}`;
+            const weeklyPayment = total_repayment / duration_weeks;
+            const formattedWeeklyPayment = `MWK ${weeklyPayment.toLocaleString()}`;
+
+            // Professional email to user
+            try {
+                const userEmailSubject = 'XTData Loan Application Received';
+                const userEmailMessage = `
+Dear ${userName},
+
+Thank you for choosing XTData Financial Services.
+
+We have received your loan application and our team is reviewing it.
+
+Application Reference: XT-${loan_id}
+Date Submitted: ${applicationDate}
+
+Loan Summary
+----------------------------------------
+Loan Amount: ${formattedLoanAmount}
+Interest Rate: ${interest_rate}%
+Interest Amount: ${formattedInterestAmount}
+Total Repayment: ${formattedTotalRepayment}
+Repayment Period: ${duration_weeks} weeks
+Weekly Installment: ${formattedWeeklyPayment}
+
+What to Expect
+----------------------------------------
+Our loan officers will review your application within 24-48 hours.
+You will receive an email once a decision has been made.
+
+Track your application status anytime by logging into your account.
+
+For inquiries, please contact:
+support@xtdata.com
+
+Yours sincerely,
+Loan Processing Department
+XTData Financial Services
+`;
+
+                await sendEmail(userEmail, userEmailSubject, userEmailMessage);
+                userEmailSent = true;
+
+            } catch (err) {
+                console.error('Failed to send user email:', err);
+                emailError = err.message;
+            }
+
+            // Professional email to admin
+            try {
+                const adminEmail = process.env.ADMIN_EMAIL || 'admin@xtdata.com';
+                const adminEmailSubject = `New Loan Application - XT-${loan_id}`;
+                const adminEmailMessage = `
+New Loan Application Requires Review
+
+Application ID: XT-${loan_id}
+Submitted: ${applicationDate}
+
+Applicant Information
+----------------------------------------
+Name: ${userName}
+Email: ${userEmail}
+Phone: ${userInfo[0].phone || 'Not provided'}
+
+Loan Details
+----------------------------------------
+Amount: ${formattedLoanAmount}
+Interest Rate: ${interest_rate}%
+Interest Amount: ${formattedInterestAmount}
+Total Repayment: ${formattedTotalRepayment}
+Duration: ${duration_weeks} weeks
+Weekly Payment: ${formattedWeeklyPayment}
+
+Action Required
+----------------------------------------
+Please review this application and update status accordingly.
+
+Approve: PATCH /api/loans/${loan_id}/status { "status": "approved" }
+Reject: PATCH /api/loans/${loan_id}/status { "status": "rejected" }
+
+XTData Loan Management System
+`;
+
+                await sendEmail(adminEmail, adminEmailSubject, adminEmailMessage);
+                adminEmailSent = true;
+
+            } catch (err) {
+                console.error('Failed to send admin email:', err);
+                emailError = err.message;
+            }
+        }
+
+        let responseMessage = "Loan application submitted successfully";
+        if (userEmailSent && adminEmailSent) {
+            responseMessage += " and email confirmations sent.";
+        } else if (userEmailSent) {
+            responseMessage += " and confirmation email sent.";
+        }
+
+        return res.status(201).json({
+            success: true,
+            message: responseMessage,
+            loan_id: loan_id,
+            profile_completed: 1,
+            loan_submitted: 1,
+            interest_amount: interest_amount,
+            total_repayment: total_repayment,
+            email_notifications: {
+                user_email_sent: userEmailSent,
+                admin_email_sent: adminEmailSent
+            }
         });
 
     } catch (error) {
@@ -158,9 +278,8 @@ router.get('/current', async (req, res) => {
 });
 
 // ===============================
-// UPDATE LOAN STATUS (APPROVE/REJECT/COMPLETE/ACTIVE)
+// UPDATE LOAN STATUS WITH EMAIL NOTIFICATIONS
 // PATCH /api/loans/:loan_id/status
-// Body: { "status": "approved" | "rejected" | "completed" | "active" }
 // ===============================
 router.patch('/:loan_id/status', async (req, res) => {
     try {
@@ -180,7 +299,6 @@ router.patch('/:loan_id/status', async (req, res) => {
             return res.status(400).json({ message: `Loan is already ${previousStatus} and cannot be changed` });
         }
 
-        // Get user information before updating
         const [userInfo] = await db.query(`
             SELECT 
                 u.email, 
@@ -196,10 +314,8 @@ router.patch('/:loan_id/status', async (req, res) => {
             WHERE l.loan_id = ?
         `, [loan_id]);
 
-        // Update loan status
         await db.query(`UPDATE loans SET status = ? WHERE loan_id = ?`, [status, loan_id]);
 
-        // Send clean email notification
         let emailSent = false;
         let emailError = null;
 
@@ -212,6 +328,10 @@ router.patch('/:loan_id/status', async (req, res) => {
             const interestRate = userInfo[0].interest_rate;
             const interestAmount = userInfo[0].interest_amount;
             const weeklyPayment = totalRepayment / durationWeeks;
+            const formattedAmount = `MWK ${loanAmount.toLocaleString()}`;
+            const formattedTotal = `MWK ${totalRepayment.toLocaleString()}`;
+            const formattedInterest = `MWK ${interestAmount.toLocaleString()}`;
+            const formattedWeekly = `MWK ${weeklyPayment.toLocaleString()}`;
 
             try {
                 if (status === 'approved') {
@@ -220,45 +340,54 @@ Dear ${userName},
 
 Your loan application has been approved.
 
-Loan Details:
-• Amount: MWK ${loanAmount.toLocaleString()}
-• Interest Rate: ${interestRate}%
-• Interest Amount: MWK ${interestAmount.toLocaleString()}
-• Total Repayment: MWK ${totalRepayment.toLocaleString()}
-• Duration: ${durationWeeks} weeks
+Loan Reference: XT-${loan_id}
+Approved Amount: ${formattedAmount}
+Interest Rate: ${interestRate}%
+Interest Amount: ${formattedInterest}
+Total Repayment: ${formattedTotal}
+Repayment Period: ${durationWeeks} weeks
+Weekly Installment: ${formattedWeekly}
 
-Next Steps:
-Funds will be disbursed to your account within 24 hours. You will receive a confirmation once the transfer is complete.
+Next Steps
+----------------------------------------
+Funds will be disbursed to your registered account within 24 hours.
+You will receive a confirmation once the transfer is complete.
 
-Thank you for choosing XTData Loan Platform.
+For questions, contact: support@xtdata.com
 
-Regards,
-XTData Team
+Yours sincerely,
+Credit Department
+XTData Financial Services
 `;
-                    await sendEmail(userEmail, 'Loan Application Approved - XTData', message);
+                    await sendEmail(userEmail, 'XTData Loan Application Approved', message);
                     emailSent = true;
 
                 } else if (status === 'rejected') {
                     const message = `
 Dear ${userName},
 
-Thank you for your loan application. After careful review, we regret to inform you that your application has been rejected.
+Thank you for your interest in XTData Financial Services.
 
-Application Details:
-• Loan Amount Requested: MWK ${loanAmount.toLocaleString()}
-• Application Date: ${new Date().toLocaleDateString()}
+After careful review of your application (Ref: XT-${loan_id}), we regret to inform you that we cannot approve your loan request at this time.
 
-What you can do:
-• Contact our support team for more information
-• Ensure all your profile information is up to date
-• You may reapply after 30 days
+Application Details
+----------------------------------------
+Requested Amount: ${formattedAmount}
+Application Date: ${new Date().toLocaleDateString()}
 
-For assistance, contact us at support@xtdata.com
+What You Can Do
+----------------------------------------
+- Ensure all your profile information is up to date
+- Contact our support team for more information
+- You may reapply after 30 days
 
-Best regards,
-XTData Loan Platform Team
+Need assistance? Contact us at support@xtdata.com
+
+Yours sincerely,
+Credit Department
+XTData Financial Services
 `;
-                    await sendEmail(userEmail, 'Update on Your Loan Application - XTData', message);
+                    await sendEmail(userEmail, 'XTData Loan Application Status Update', message);
                     emailSent = true;
                     
                 } else if (status === 'active') {
@@ -268,22 +397,35 @@ XTData Loan Platform Team
                     const message = `
 Dear ${userName},
 
-Your loan is now active and funds have been disbursed.
+Your loan has been activated and funds have been disbursed.
 
-Loan Summary:
-• Principal Amount: MWK ${loanAmount.toLocaleString()}
-• Total to Repay: MWK ${totalRepayment.toLocaleString()}
-• Weekly Payment: MWK ${weeklyPayment.toLocaleString()}
-• Payment Period: ${durationWeeks} weeks
+Loan Details
+----------------------------------------
+Loan Reference: XT-${loan_id}
+Principal Amount: ${formattedAmount}
+Interest Rate: ${interestRate}%
+Interest Amount: ${formattedInterest}
+Total to Repay: ${formattedTotal}
+Repayment Period: ${durationWeeks} weeks
+Weekly Payment: ${formattedWeekly}
 
+Payment Schedule
+----------------------------------------
 First Payment Due: ${firstPaymentDue.toLocaleDateString()}
+Please ensure timely payments to maintain good credit standing.
 
-Please ensure timely payments to avoid penalties.
+Payment Methods Accepted:
+- Bank Transfer
+- Airtel Money
+- TNM Mpamba
 
-Regards,
-XTData Team
+For support, contact: payments@xtdata.com
+
+Yours sincerely,
+Disbursement Department
+XTData Financial Services
 `;
-                    await sendEmail(userEmail, 'Your Loan is Now Active - XTData', message);
+                    await sendEmail(userEmail, 'XTData Loan Active - Funds Disbursed', message);
                     emailSent = true;
                     
                 } else if (status === 'completed') {
@@ -292,18 +434,23 @@ Dear ${userName},
 
 Congratulations! Your loan has been fully repaid.
 
-Loan ID: ${loan_id}
-Total Repaid: MWK ${totalRepayment.toLocaleString()}
+Loan Summary
+----------------------------------------
+Loan Reference: XT-${loan_id}
+Total Repaid: ${formattedTotal}
 Completion Date: ${new Date().toLocaleDateString()}
 
-Thank you for being a responsible borrower. You are now eligible to apply for a new loan.
+Your responsible repayment history has been recorded. You are now eligible to apply for a new loan with better terms.
+
+Thank you for choosing XTData Financial Services.
 
 We look forward to serving you again.
 
-Best regards,
-XTData Team
+Yours sincerely,
+Loan Servicing Department
+XTData Financial Services
 `;
-                    await sendEmail(userEmail, 'Loan Fully Repaid - XTData', message);
+                    await sendEmail(userEmail, 'XTData Loan Fully Repaid - Congratulations', message);
                     emailSent = true;
                 }
             } catch (err) {
@@ -315,8 +462,6 @@ XTData Team
         let responseMessage = `Loan status updated to '${status}'`;
         if (emailSent) {
             responseMessage += ` and email notification sent`;
-        } else if (['approved', 'rejected', 'active', 'completed'].includes(status)) {
-            responseMessage += ` but email notification failed: ${emailError}`;
         }
 
         return res.status(200).json({
@@ -471,7 +616,7 @@ router.get('/total-active-loans', async (req, res) => {
 });
 
 // ===============================
-// GET LOAN SUMMARY (All counts in one request)
+// GET LOAN SUMMARY
 // GET /api/loans/summary
 // ===============================
 router.get('/summary', async (req, res) => {
