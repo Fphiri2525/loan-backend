@@ -1,5 +1,5 @@
 const express = require('express');
-const router = express.Router(); // ✅ THIS LINE IS MISSING - Make sure it's at the top!
+const router = express.Router();
 const db = require('../config/db');
 const sendEmail = require('../utils/mail');
 
@@ -59,10 +59,9 @@ router.post('/apply', async (req, res) => {
             return res.status(400).json({ message: "Duration must be between 1 and 52 weeks" });
         }
 
-        // Validate interest rate
-        const validRates = [5, 10, 15, 20];
-        if (!validRates.includes(interest_rate)) {
-            return res.status(400).json({ message: "Interest rate must be one of: 5%, 10%, 15%, 20%" });
+        // ✅ UPDATED: Accept any interest rate between 0.5% and 50%
+        if (interest_rate < 0.5 || interest_rate > 50) {
+            return res.status(400).json({ message: "Interest rate must be between 0.5% and 50%" });
         }
 
         const [profileCheck] = await db.query(`
@@ -95,7 +94,13 @@ router.post('/apply', async (req, res) => {
             VALUES (?, ?, ?, ?, ?, ?)
         `, [profile_id, loan_amount, interest_rate, interest_amount, total_repayment, duration_weeks]);
 
-        return res.status(201).json({ message: "Loan application submitted successfully", profile_completed: 1, loan_submitted: 1, interest_amount, total_repayment });
+        return res.status(201).json({ 
+            message: "Loan application submitted successfully", 
+            profile_completed: 1, 
+            loan_submitted: 1, 
+            interest_amount, 
+            total_repayment 
+        });
 
     } catch (error) {
         console.error(error);
