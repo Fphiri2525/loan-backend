@@ -14,14 +14,12 @@ const db = require('./config/db');
 const app = express();
 
 // ==========================
-// CORS Configuration - FIXED for production
+// CORS Configuration
 // ==========================
 const allowedOrigins = [
-    'http://localhost:3000',           // Local development
-    'http://localhost:3001',           // Alternative local port
-    'https://your-frontend-domain.com', // Replace with your actual frontend domain
-    'https://loan-frontend-production.up.railway.app', // Example Railway frontend
-    // Add any other frontend URLs you're using
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'https://xdt-financial-assocaite-chi.vercel.app',
 ];
 
 app.use(cors({
@@ -40,14 +38,6 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// For development, you can also use a more permissive CORS:
-// app.use(cors({
-//     origin: '*',
-//     credentials: true,
-//     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-//     allowedHeaders: ['Content-Type', 'Authorization']
-// }));
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -63,7 +53,7 @@ const testRoute = require('./routes/test');
 app.use('/api', testRoute);
 
 // ==========================
-// ✅ Register Admin Notification Route
+// Register Admin Notification Route
 // ==========================
 const emailNotificationRoute = require('./routes/emailNotification');
 app.use('/api/email', emailNotificationRoute);
@@ -98,15 +88,12 @@ app.get('/api/test', (req, res) => {
 app.get('/api/debug/routes', (req, res) => {
     const routes = [];
     
-    // Function to extract routes from router
     const extractRoutes = (stack, basePath = '') => {
         stack.forEach(layer => {
             if (layer.route) {
-                // Routes registered directly
                 const methods = Object.keys(layer.route.methods).join(', ').toUpperCase();
                 routes.push(`${methods} ${basePath}${layer.route.path}`);
             } else if (layer.name === 'router' && layer.handle.stack) {
-                // Router middleware
                 const routerPath = layer.regexp.source
                     .replace('\\/?(?=\\/|$)', '')
                     .replace(/\\\//g, '/')
@@ -178,7 +165,7 @@ app.get('/', (req, res) => {
 });
 
 // ==========================
-// 404 Handler - Improved for debugging
+// 404 Handler
 // ==========================
 app.use((req, res) => {
     console.log(`404 Not Found: ${req.method} ${req.originalUrl}`);
@@ -222,7 +209,6 @@ app.listen(PORT, () => {
     console.log(`🔍 Debug routes:       http://localhost:${PORT}/api/debug/routes`);
     console.log(`📩 Email test route:   http://localhost:${PORT}/api/test-email`);
     console.log(`📧 Admin notification: http://localhost:${PORT}/api/email/admin-notification`);
-    console.log(`🧪 Test admin email:   http://localhost:${PORT}/api/email/test-admin-notification`);
     console.log(`🔑 Login endpoint:     http://localhost:${PORT}/api/users/login`);
     console.log(`📊 Loans endpoint:     http://localhost:${PORT}/api/loans`);
     console.log(`📈 Loan summary:       http://localhost:${PORT}/api/loans/summary`);
