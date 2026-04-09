@@ -21,12 +21,13 @@ const transporter = nodemailer.createTransport({
   port: MAIL_PORT,
   secure: false,
   requireTLS: true,
+  family: 4,          // 👈 force IPv4 — fixes ENETUNREACH on Railway
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
-  logger: true,   // logs SMTP commands to console
-  debug: true,    // shows full SMTP conversation
+  logger: true,
+  debug: true,
 });
 
 // Verify connection at startup
