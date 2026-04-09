@@ -1,4 +1,4 @@
-const express = require('express');
+ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 const sendEmail = require('../utils/mail');
@@ -137,7 +137,7 @@ Repayment Period: ${duration_weeks} weeks
 Weekly Installment: ${formattedWeeklyPayment}
 
 What to Expect
-----------------------------------------
+
 Our loan officers will review your application within 24-48 hours.
 You will receive an email once a decision has been made.
 
@@ -147,7 +147,7 @@ For inquiries, please contact: support@xtdata.com
 
 Yours sincerely,
 Loan Processing Department
-XTData Financial Services
+XDt Financial Services
 `;
 
                 await sendEmail(userEmail, userEmailSubject, userEmailMessage);
@@ -375,15 +375,13 @@ Thank you for your interest in XTData Financial Services.
 After careful review of your application (Ref: XT-${loan_id}), we regret to inform you that we cannot approve your loan request at this time.
 
 Application Details
-----------------------------------------
 Requested Amount: ${formattedAmount}
 Application Date: ${new Date().toLocaleDateString()}
 
 What You Can Do
-----------------------------------------
-- Ensure all your profile information is up to date
-- Contact our support team for more information
-- You may reapply after 30 days
+Ensure all your profile information is up to date
+ Contact our support team for more information
+You may reapply after 30 days
 
 Need assistance? Contact us at support@xtdata.com
 
@@ -404,7 +402,6 @@ Dear ${userName},
 Your loan has been activated and funds have been disbursed.
 
 Loan Details
-----------------------------------------
 Loan Reference: XT-${loan_id}
 Principal Amount: ${formattedAmount}
 Interest Rate: ${interestRate}%
@@ -414,14 +411,13 @@ Repayment Period: ${durationWeeks} weeks
 Weekly Payment: ${formattedWeekly}
 
 Payment Schedule
-----------------------------------------
 First Payment Due: ${firstPaymentDue.toLocaleDateString()}
 Please ensure timely payments to maintain good credit standing.
 
 Payment Methods Accepted:
-- Bank Transfer
-- Airtel Money
-- TNM Mpamba
+Bank Transfer
+Airtel Money
+TNM Mpamba
 
 For support, contact: payments@xtdata.com
 
@@ -439,7 +435,6 @@ Dear ${userName},
 Congratulations! Your loan has been fully repaid.
 
 Loan Summary
-----------------------------------------
 Loan Reference: XT-${loan_id}
 Total Repaid: ${formattedTotal}
 Completion Date: ${new Date().toLocaleDateString()}
