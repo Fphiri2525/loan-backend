@@ -370,7 +370,7 @@ XTData Financial Services
                     const message = `
 Dear ${userName},
 
-Thank you for your interest in XTData Financial Services.
+Thank you for your interest in XDt Financial Services.
 
 After careful review of your application (Ref: XT-${loan_id}), we regret to inform you that we cannot approve your loan request at this time.
 
@@ -387,7 +387,7 @@ Need assistance? Contact us at support@xtdata.com
 
 Yours sincerely,
 Credit Department
-XTData Financial Services
+XDt Financial Services
 `;
                     await sendEmail(userEmail, 'XTData Loan Application Status Update', message);
                     emailSent = true;

@@ -1,27 +1,23 @@
 const express = require("express");
 const router = express.Router();
 const multer = require("multer");
-const path = require("path");
+const cloudinary = require("cloudinary").v2;
 const db = require("../config/db");
 
-// Storage config
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, "uploads/");
-    },
-    filename: function (req, file, cb) {
-        const uniqueName = Date.now() + path.extname(file.originalname);
-        cb(null, uniqueName);
-    }
+// Cloudinary config
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+// Use memory storage — no local disk saving
+const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// Upload collateral image (AUTO collateral detection)
+// Upload collateral image
 router.post("/upload/:collateral_id", upload.single("image"), async (req, res) => {
-
     try {
-
         const collateral_id = req.params.collateral_id;
 
         if (!req.file) {
@@ -42,22 +38,36 @@ router.post("/upload/:collateral_id", upload.single("image"), async (req, res) =
             });
         }
 
-        const imagePath = req.file.filename;
+        console.log("📤 Uploading image to Cloudinary...");
 
-        // Insert image record
+        // Upload buffer directly to Cloudinary
+        const uploadResult = await new Promise((resolve, reject) => {
+            const stream = cloudinary.uploader.upload_stream(
+                { folder: "collateral_images" },
+                (error, result) => {
+                    if (error) reject(error);
+                    else resolve(result);
+                }
+            );
+            stream.end(req.file.buffer);
+        });
+
+        console.log("✅ Cloudinary upload success:", uploadResult.secure_url);
+
+        // Save Cloudinary URL to database
         await db.query(`
             INSERT INTO collateral_images
             (collateral_id, image_path)
             VALUES (?, ?)
-        `, [collateral_id, imagePath]);
+        `, [collateral_id, uploadResult.secure_url]);
 
         res.status(201).json({
-            message: "Collateral image uploaded"
+            message: "Collateral image uploaded successfully",
+            image_url: uploadResult.secure_url
         });
 
     } catch (error) {
-        console.error(error);
-
+        console.error("❌ Upload error:", error);
         res.status(500).json({
             message: "Server error",
             error: error.message

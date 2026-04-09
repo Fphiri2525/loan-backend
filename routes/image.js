@@ -2,28 +2,22 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 const multer = require('multer');
-const path = require('path');
+const cloudinary = require('cloudinary').v2;
 
-
-// Storage configuration
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, 'uploads/');
-    },
-    filename: function (req, file, cb) {
-        const uniqueName = Date.now() + path.extname(file.originalname);
-        cb(null, uniqueName);
-    }
+// Cloudinary config
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-const upload = multer({ storage: storage });
-
+// Memory storage — no local disk saving
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
 
 // Upload ID Image
 router.post('/upload', upload.single('image'), async (req, res) => {
-
     try {
-
         const { email, image_type } = req.body;
 
         if (!email || !image_type || !req.file) {
@@ -48,30 +42,40 @@ router.post('/upload', upload.single('image'), async (req, res) => {
 
         const profile_id = profile[0].profile_id;
 
-        // 2️⃣ Insert image record
-        const imagePath = req.file.filename;
+        console.log("📤 Uploading ID image to Cloudinary...");
 
+        // 2️⃣ Upload to Cloudinary
+        const uploadResult = await new Promise((resolve, reject) => {
+            const stream = cloudinary.uploader.upload_stream(
+                { folder: "id_images" },
+                (error, result) => {
+                    if (error) reject(error);
+                    else resolve(result);
+                }
+            );
+            stream.end(req.file.buffer);
+        });
+
+        console.log("✅ Cloudinary upload success:", uploadResult.secure_url);
+
+        // 3️⃣ Insert image record with Cloudinary URL
         await db.query(`
             INSERT INTO id_images (profile_id, image_type, image_path)
             VALUES (?, ?, ?)
-        `, [profile_id, image_type, imagePath]);
+        `, [profile_id, image_type, uploadResult.secure_url]);
 
         res.status(201).json({
             message: "ID image uploaded successfully",
-            image: imagePath
+            image: uploadResult.secure_url
         });
 
     } catch (error) {
-
-        console.error(error);
-
+        console.error("❌ Upload error:", error);
         res.status(500).json({
             message: "Server error",
             error: error.message
         });
-
     }
-
 });
 
 module.exports = router;
