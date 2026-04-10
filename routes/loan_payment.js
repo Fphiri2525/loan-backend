@@ -98,31 +98,29 @@ router.post('/pay', async (req, res) => {
 Dear ${username},
 
 We have received your loan payment.
-
-─── Payment Details ───────────────────────
-• Amount Paid:      ${fmtMWK(amount_paid)}
-• Payment Date:     ${new Date(payment_date).toLocaleDateString()}
-• Payment Method:   ${payment_method || 'Bank Transfer'}
-• Transaction ID:   ${result.insertId}
-
-─── Summary ───────────────────────────────
-• Total Paid So Far:  ${fmtMWK(newTotalPaid)}
-• Remaining Balance:  ${fmtMWK(Math.max(0, remainingBalance))}
+ Payment Details 
+ Amount Paid:      ${fmtMWK(amount_paid)}
+ Payment Date:     ${new Date(payment_date).toLocaleDateString()}
+ Payment Method:   ${payment_method || 'Bank Transfer'}
+ Transaction ID:   ${result.insertId}
+Summary
+Total Paid So Far:  ${fmtMWK(newTotalPaid)}
+Remaining Balance:  ${fmtMWK(Math.max(0, remainingBalance))}
 `;
 
             if (loanCompleted) {
-                subject = 'Loan Fully Paid – Congratulations! 🎉';
-                body   += `\n🎉 Your loan is now FULLY PAID! Thank you for your timely repayments.\nYou are eligible to apply for a new loan.\n`;
+                subject = 'Loan Fully Paid – Congratulations! ';
+                body   += `\nYour loan is now FULLY PAID! Thank you for your timely repayments.\nYou are eligible to apply for a new loan.\n`;
             } else {
                 body += `
-─── Next Steps ────────────────────────────
-• Next Payment Due:   ${nextPayment.toLocaleDateString()}
-• Suggested Amount:   ${fmtMWK(weeklyPayment)}
-• Total Remaining:    ${fmtMWK(Math.max(0, remainingBalance))}
+Next Steps
+Next Payment Due:   ${nextPayment.toLocaleDateString()}
+Suggested Amount:   ${fmtMWK(weeklyPayment)}
+Total Remaining:    ${fmtMWK(Math.max(0, remainingBalance))}
 `;
             }
 
-            body += `\nThank you for choosing XTData Loan Platform.\n\nRegards,\nXTData Team\n`;
+            body += `\nThank you for choosing XDt associate Loan Platform.\n\nRegards,\nXTData Team\n`;
 
             await sendEmail(email, subject, body);
             emailSent = true;

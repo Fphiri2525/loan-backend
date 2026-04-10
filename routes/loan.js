@@ -1,4 +1,4 @@
- const express = require('express');
+const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 const sendEmail = require('../utils/mail');
@@ -30,6 +30,69 @@ router.get('/status', async (req, res) => {
 
         const { profile_completed, loan_submitted, profile_id } = rows[0];
         return res.status(200).json({ profile_completed, loan_submitted, profile_id: profile_id ?? null });
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: "Server error", error: error.message });
+    }
+});
+
+// ===============================
+// CHECK IF LOAN IS APPROVED
+// GET /api/loans/is-approved?email=user@example.com
+// ===============================
+router.get('/is-approved', async (req, res) => {
+    try {
+        const { email } = req.query;
+        if (!email) return res.status(400).json({ message: "Email query parameter is required" });
+
+        const [rows] = await db.query(`
+            SELECT
+                l.loan_id,
+                l.loan_amount,
+                l.interest_rate,
+                l.interest_amount,
+                l.total_repayment,
+                l.duration_weeks,
+                l.status,
+                l.created_at
+            FROM users u
+            JOIN user_profiles up ON u.user_id = up.user_id
+            JOIN loans l ON up.profile_id = l.profile_id
+            WHERE u.email = ?
+            ORDER BY l.loan_id DESC
+            LIMIT 1
+        `, [email]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                is_approved: false,
+                message: "No loan application found for this user"
+            });
+        }
+
+        const loan = rows[0];
+        const isApproved = loan.status === 'approved';
+
+        return res.status(200).json({
+            success: true,
+            is_approved: isApproved,
+            status: loan.status,
+            message: isApproved
+                ? "Your loan application has been approved"
+                : `Your loan application is currently '${loan.status}'`,
+            loan: {
+                loan_id:         loan.loan_id,
+                loan_amount:     Number(loan.loan_amount),
+                interest_rate:   Number(loan.interest_rate),
+                interest_amount: Number(loan.interest_amount),
+                total_repayment: Number(loan.total_repayment),
+                weekly_payment:  Number(loan.total_repayment) / loan.duration_weeks,
+                duration_weeks:  loan.duration_weeks,
+                created_at:      loan.created_at
+            }
+        });
 
     } catch (error) {
         console.error(error);
