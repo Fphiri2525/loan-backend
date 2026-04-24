@@ -762,5 +762,102 @@ router.get('/history', async (req, res) => {
         return res.status(500).json({ message: "Server error", error: error.message });
     }
 });
+// ===============================
+// DELETE LOAN (EVEN IF APPROVED)
+// DELETE /api/loans/:loan_id
+// ===============================
+router.delete('/:loan_id', async (req, res) => {
+    try {
+        const { loan_id } = req.params;
+        const { reason, deleted_by } = req.body; // optional: log who deleted and why
+
+        // Check loan exists and get details
+        const [existing] = await db.query(`
+            SELECT 
+                l.loan_id,
+                l.status,
+                l.loan_amount,
+                u.email,
+                u.username
+            FROM loans l
+            JOIN user_profiles up ON l.profile_id = up.profile_id
+            JOIN users u ON up.user_id = u.user_id
+            WHERE l.loan_id = ?
+            LIMIT 1
+        `, [loan_id]);
+
+        if (existing.length === 0) {
+            return res.status(404).json({ 
+                success: false,
+                message: `Loan XT-${loan_id} not found` 
+            });
+        }
+
+        const loan = existing[0];
+
+        // Only block deletion of already-completed loans (optional — remove if you want full delete)
+        if (loan.status === 'completed') {
+            return res.status(400).json({
+                success: false,
+                message: `Loan XT-${loan_id} is already completed and cannot be deleted. Contact system admin.`
+            });
+        }
+
+        // Delete the loan
+        await db.query(`DELETE FROM loans WHERE loan_id = ?`, [loan_id]);
+
+        // Send email notification to user
+        try {
+            const deletionReason = reason || 'collateral not provided or application requirements not met';
+            const message = `
+Dear ${loan.username},
+
+Your loan application (Ref: XT-${loan_id}) has been removed from our system.
+
+Loan Details
+----------------------------------------
+Loan Reference: XT-${loan_id}
+Amount: MWK ${Number(loan.loan_amount).toLocaleString()}
+Previous Status: ${loan.status}
+Removal Date: ${new Date().toLocaleDateString()}
+
+Reason
+----------------------------------------
+${deletionReason}
+
+What You Can Do
+----------------------------------------
+- Ensure you have all required collateral documents ready
+- Contact our office for clarification: support@xtdata.com
+- You may reapply once you have met all requirements
+
+We hope to assist you again in the future.
+
+Yours sincerely,
+Loan Processing Department
+XTData Financial Services
+`;
+            await sendEmail(loan.email, 'XTData Loan Application Removed', message);
+        } catch (emailErr) {
+            console.error('Failed to send deletion email:', emailErr.message);
+            // Don't fail the request if email fails
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: `Loan XT-${loan_id} has been successfully deleted`,
+            deleted_loan: {
+                loan_id: Number(loan_id),
+                previous_status: loan.status,
+                user_email: loan.email,
+                reason: reason || 'No reason provided'
+            }
+        });
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: "Server error", error: error.message });
+    }
+});s
 
 module.exports = router;
