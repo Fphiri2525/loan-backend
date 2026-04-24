@@ -858,6 +858,6 @@ XTData Financial Services
         console.error(error);
         return res.status(500).json({ message: "Server error", error: error.message });
     }
-});s
+});
 
 module.exports = router;
