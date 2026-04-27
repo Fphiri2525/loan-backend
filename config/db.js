@@ -58,7 +58,7 @@ setInterval(() => {
     } else {
       console.log('🏓 DB keep-alive ping successful');
     }
-  });s
+  });
 }, 5 * 60 * 1000);
 
 // Export a promise pool getter so it always uses the latest pool
